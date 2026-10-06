@@ -145,7 +145,6 @@ Modern e-commerce and retail brands receive thousands of customer reviews across
 ```
 InsightPulse_AI/
 ├── insightpulse_ai.py           # Primary Streamlit Application Entrypoint
-├── app.py                       # Application Alias Entrypoint (for Cloud deployment)
 ├── customer-reviews-1000.csv    # Benchmark Dataset (500 Real-World Reviews)
 ├── full_end_to_end_qa.py        # Master 20-Point Automated QA Test Suite
 ├── requirements.txt             # Production Dependencies
@@ -209,7 +208,6 @@ python full_end_to_end_qa.py
 ```bash
 streamlit run insightpulse_ai.py
 ```
-*(Or launch via alias: `streamlit run app.py`)*
 
 Open your browser at **`http://localhost:8501`**.
 
