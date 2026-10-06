@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: transparent;
+    padding: 2px 4px;
+    overflow: hidden;
+  }
+  .voice-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: #151D2E;
+    color: #F8FAFC;
+    transition: all 0.2s ease;
+  }
+  .voice-bar.light {
+    background: #F8FAFC;
+    color: #0F172A;
+    border-color: #CBD5E1;
+  }
+  .top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .mic-btn {
+    background: #2563EB;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+    transition: all 0.2s ease;
+    outline: none;
+    user-select: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .mic-btn:hover {
+    background: #1D4ED8;
+    transform: translateY(-1px);
+  }
+  .mic-btn.listening {
+    background: #EF4444;
+    animation: pulse-ring 1.4s infinite;
+  }
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+    70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  }
+  .lang-select {
+    background: #1E293B;
+    color: #F8FAFC;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 5px 8px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    outline: none;
+    cursor: pointer;
+    max-width: 140px;
+  }
+  .voice-bar.light .lang-select {
+    background: #FFFFFF;
+    color: #0F172A;
+    border-color: #CBD5E1;
+  }
+  .lang-select option {
+    background: #1E293B;
+    color: #F8FAFC;
+  }
+  .voice-bar.light .lang-select option {
+    background: #FFFFFF;
+    color: #0F172A;
+  }
+  .status-text {
+    font-size: 0.78rem;
+    color: #94A3B8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+  .voice-bar.light .status-text {
+    color: #64748B;
+  }
+</style>
+</head>
+<body>
+<div id="voiceBar" class="voice-bar">
+  <div class="top-row">
+    <button id="micBtn" class="mic-btn" type="button" title="Click to speak (Voice Input)">
+      <span>🎤</span> <span id="micText">Speak Question</span>
+    </button>
+    <select id="langSelect" class="lang-select">
+      <option value="en-US">English (en-US)</option>
+      <option value="hi-IN">हिन्दी (hi-IN)</option>
+      <option value="en-IN">Hinglish (en-IN)</option>
+    </select>
+  </div>
+  <div id="statusText" class="status-text">
+    Ready. Click <strong>🎤 Speak Question</strong> to talk.
+  </div>
+</div>
+
+<script>
+  function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  const micBtn = document.getElementById('micBtn');
+  const micText = document.getElementById('micText');
+  const statusText = document.getElementById('statusText');
+  const langSelect = document.getElementById('langSelect');
+  const voiceBar = document.getElementById('voiceBar');
+
+  // Streamlit Custom Component protocol
+  function sendStreamlitMessage(type, data) {
+    try {
+      const msg = Object.assign({
+        isStreamlitMessage: true,
+        type: type
+      }, data || {});
+      window.parent.postMessage(msg, '*');
+    } catch (err) {
+      console.error('Failed to postMessage to Streamlit parent:', err);
+    }
+  }
+
+  function getAutoHeight() {
+    const bodyH = document.body ? document.body.scrollHeight : 0;
+    const docH = document.documentElement ? document.documentElement.scrollHeight : 0;
+    return Math.max(bodyH, docH, 76);
+  }
+
+  function sendReady() {
+    sendStreamlitMessage('streamlit:componentReady', { apiVersion: 1 });
+    sendStreamlitMessage('streamlit:setFrameHeight', { height: getAutoHeight() });
+  }
+
+  // Signal ready immediately
+  sendReady();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', sendReady);
+  } else {
+    sendReady();
+  }
+  window.addEventListener('load', sendReady);
+
+  // Render events from Streamlit
+  window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'streamlit:render') {
+      const args = event.data.args || {};
+      const theme = args.theme || (event.data.theme && event.data.theme.base);
+      if (theme === 'light') {
+        voiceBar.classList.add('light');
+      } else {
+        voiceBar.classList.remove('light');
+      }
+      sendStreamlitMessage('streamlit:setFrameHeight', { height: getAutoHeight() });
+    }
+  });
+
+  // Check whether Native SpeechRecognition is supported
+  function isNativeSpeechSupported() {
+    try {
+      if (window.SpeechRecognition || window.webkitSpeechRecognition) return true;
+      if (window.parent && (window.parent.SpeechRecognition || window.parent.webkitSpeechRecognition)) return true;
+    } catch (e) {}
+    return false;
+  }
+
+  // Inject top-level controller into window.parent so SpeechSynthesis & SpeechRecognition run in the main window
+  function initParentVoiceController() {
+    try {
+      if (window.parent && window.parent.document) {
+        const iframes = window.parent.document.querySelectorAll('iframe');
+        iframes.forEach(function(f) {
+          try {
+            if (!f.getAttribute('allow') || !f.getAttribute('allow').includes('microphone')) {
+              f.setAttribute('allow', 'microphone *; speech-recognition *; autoplay *');
+            }
+          } catch(e) {}
+        });
+
+        if (!window.parent.__pulseVoiceController) {
+          const parentScript = window.parent.document.createElement('script');
+          parentScript.id = '__pulse_voice_top_controller';
+          parentScript.textContent = `
+            (function() {
+              if (window.__pulseVoiceController) return;
+              window.__pulseVoiceController = {
+                recognition: null,
+                isListening: false,
+                activeCallbacks: null,
+
+                startNative: function(lang, callbacks) {
+                  this.activeCallbacks = callbacks;
+                  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                  if (!SR) {
+                    if (callbacks && callbacks.onError) callbacks.onError({ error: 'not-supported' });
+                    return;
+                  }
+
+                  if (this.recognition) {
+                    try { this.recognition.abort(); } catch(e) {}
+                    this.recognition = null;
+                  }
+
+                  const self = this;
+                  const launch = function() {
+                    try {
+                      const rec = new SR();
+                      self.recognition = rec;
+                      rec.continuous = false;
+                      rec.interimResults = true;
+                      rec.lang = lang || 'en-US';
+
+                      rec.onstart = function() {
+                        self.isListening = true;
+                        if (self.activeCallbacks && self.activeCallbacks.onStart) {
+                          self.activeCallbacks.onStart();
+                        }
+                      };
+
+                      rec.onresult = function(event) {
+                        let interim = '';
+                        let final = '';
+                        for (let i = event.resultIndex; i < event.results.length; ++i) {
+                          if (event.results[i].isFinal) {
+                            final += event.results[i][0].transcript;
+                          } else {
+                            interim += event.results[i][0].transcript;
+                          }
+                        }
+                        if (self.activeCallbacks && self.activeCallbacks.onResult) {
+                          self.activeCallbacks.onResult(final.trim(), interim.trim(), event);
+                        }
+                      };
+
+                      rec.onerror = function(event) {
+                        self.isListening = false;
+                        if (self.activeCallbacks && self.activeCallbacks.onError) {
+                          self.activeCallbacks.onError(event);
+                        }
+                      };
+
+                      rec.onend = function() {
+                        self.isListening = false;
+                        if (self.activeCallbacks && self.activeCallbacks.onEnd) {
+                          self.activeCallbacks.onEnd();
+                        }
+                      };
+
+                      rec.start();
+                    } catch(err) {
+                      self.isListening = false;
+                      if (self.activeCallbacks && self.activeCallbacks.onError) {
+                        self.activeCallbacks.onError(err);
+                      }
+                    }
+                  };
+
+                  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    navigator.mediaDevices.getUserMedia({ audio: true })
+                      .then(function(stream) {
+                        try {
+                          stream.getTracks().forEach(function(track) { track.stop(); });
+                        } catch(e) {}
+                        launch();
+                      })
+                      .catch(function(err) {
+                        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                          if (self.activeCallbacks && self.activeCallbacks.onError) {
+                            self.activeCallbacks.onError({ error: 'not-allowed' });
+                          }
+                        } else {
+                          launch();
+                        }
+                      });
+                  } else {
+                    launch();
+                  }
+                },
+
+                stopNative: function() {
+                  if (this.recognition) {
+                    try { this.recognition.stop(); } catch(e) {}
+                  }
+                  this.isListening = false;
+                },
+
+                speak: function(text) {
+                  if (!text) return;
+                  const synth = window.speechSynthesis;
+                  if (!synth) return;
+                  try {
+                    synth.cancel();
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.rate = 1.0;
+                    utterance.pitch = 1.0;
+                    if (/[\\u0900-\\u097F]/.test(text)) {
+                      utterance.lang = 'hi-IN';
+                    } else {
+                      utterance.lang = 'en-US';
+                    }
+                    const executeSpeak = function() {
+                      try {
+                        synth.cancel();
+                        if (synth.paused) synth.resume();
+                        synth.speak(utterance);
+                      } catch(e) {}
+                    };
+                    if (synth.getVoices && synth.getVoices().length > 0) {
+                      executeSpeak();
+                    } else {
+                      synth.onvoiceschanged = executeSpeak;
+                      setTimeout(executeSpeak, 150);
+                    }
+                  } catch(e) {
+                    console.error("SpeechSynthesis error:", e);
+                  }
+                }
+              };
+            })();
+          `;
+          window.parent.document.head.appendChild(parentScript);
+        }
+      }
+    } catch(e) {
+      console.warn("Parent voice controller setup exception:", e);
+    }
+  }
+
+  // Attempt parent controller setup
+  initParentVoiceController();
+
+  let isListening = false;
+  let latestText = "";
+  let lastSubmittedText = "";
+
+  function setListeningUI(listening, customText) {
+    isListening = listening;
+    if (listening) {
+      micBtn.classList.add('listening');
+      micText.innerText = customText || 'Listening...';
+      statusText.innerHTML = '🔴 <strong>Listening...</strong> Speak your question clearly into your microphone.';
+    } else {
+      micBtn.classList.remove('listening');
+      micText.innerText = 'Speak Question';
+    }
+    sendStreamlitMessage('streamlit:setFrameHeight', { height: getAutoHeight() });
+  }
+
+  function submitTextToStreamlit(text) {
+    if (!text || !text.trim()) return;
+    const clean = text.trim();
+    sendStreamlitMessage('streamlit:setComponentValue', {
+      value: {
+        action: 'voice_submit',
+        text: clean,
+        timestamp: Date.now()
+      }
+    });
+  }
+
+  function submitAudioToStreamlit(base64Wav, lang) {
+    if (!base64Wav) return;
+    sendStreamlitMessage('streamlit:setComponentValue', {
+      value: {
+        action: 'audio_submit',
+        audio_b64: base64Wav,
+        lang: lang || 'en-US',
+        timestamp: Date.now()
+      }
+    });
+  }
+
+  function populateParentInput(text) {
+    try {
+      const pDoc = window.parent.document;
+      if (pDoc) {
+        const input = pDoc.querySelector('input[data-testid="stTextInput"]') || pDoc.querySelector('input[placeholder*="Ask Pulse"]');
+        if (input) {
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+          setter.call(input, text);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    } catch (e) {}
+  }
+
+  // ==============================================================
+  // Native Web Speech Recognition Handlers (Chrome & Edge)
+  // ==============================================================
+  function handleNativeVoiceResult(final, interim) {
+    const captured = (final || interim).trim();
+    if (captured) {
+      latestText = captured;
+      statusText.innerHTML = '🎤 Captured: <em>"' + escapeHtml(captured) + '"</em>';
+      populateParentInput(captured);
+    }
+
+    if (final && final.trim().length > 1) {
+      const queryText = final.trim();
+      if (queryText !== lastSubmittedText) {
+        lastSubmittedText = queryText;
+        statusText.innerHTML = '⚡ <strong>Recognized:</strong> "' + escapeHtml(queryText) + '" • <em>Submitting...</em>';
+        populateParentInput(queryText);
+        setTimeout(function() {
+          submitTextToStreamlit(queryText);
+        }, 300);
+      }
+    }
+  }
+
+  function handleNativeVoiceError(event) {
+    const err = (event && (event.error || event.name || event.message)) || 'unknown';
+    if (err === 'not-allowed' || err === 'PermissionDeniedError' || err === 'permission-denied') {
+      setListeningUI(false);
+      statusText.innerHTML = '⚠️ <strong>Microphone permission denied.</strong> Please click the lock icon in your address bar to allow microphone access.';
+      return;
+    }
+    if (err === 'no-speech') {
+      setListeningUI(false);
+      statusText.innerHTML = 'ℹ️ No speech detected. Click <strong>🎤 Speak Question</strong> to try again.';
+      return;
+    }
+    // If native SR failed with not-supported or network error, switch to Web Audio capture engine!
+    console.warn("Native SR error, falling back to Web Audio capture engine:", err);
+    startWebAudioCapture(langSelect ? langSelect.value : 'en-US');
+  }
+
+  function handleNativeVoiceEnd() {
+    setListeningUI(false);
+    if (latestText && latestText.length > 2 && latestText !== lastSubmittedText) {
+      const queryText = latestText;
+      lastSubmittedText = queryText;
+      statusText.innerHTML = '⚡ <strong>Recognized:</strong> "' + escapeHtml(queryText) + '" • <em>Submitting...</em>';
+      populateParentInput(queryText);
+      setTimeout(function() {
+        submitTextToStreamlit(queryText);
+      }, 300);
+    }
+    sendStreamlitMessage('streamlit:setFrameHeight', { height: getAutoHeight() });
+  }
+
+  // ==============================================================
+  // Web Audio WAV Capture Engine (Firefox & Universal Fallback)
+  // Real microphone audio capture at 16kHz PCM WAV
+  // ==============================================================
+  let webAudioContext = null;
+  let webAudioStream = null;
+  let webAudioProcessor = null;
+  let webAudioChunks = [];
+  let webAudioTotalSamples = 0;
+  let webAudioHasSpoken = false;
+  let webAudioLastSpokenTime = 0;
+  let webAudioStartTime = 0;
+  let webAudioSilenceChecker = null;
+
+  function downsampleBuffer(buffer, inputSampleRate, outputSampleRate) {
+    if (inputSampleRate === outputSampleRate) return buffer;
+    const sampleRateRatio = inputSampleRate / outputSampleRate;
+    const newLength = Math.round(buffer.length / sampleRateRatio);
+    const result = new Float32Array(newLength);
+    let offsetResult = 0;
+    let offsetBuffer = 0;
+    while (offsetResult < result.length) {
+      const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+      let accum = 0, count = 0;
+      for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+        accum += buffer[i];
+        count++;
+      }
+      result[offsetResult] = count > 0 ? (accum / count) : buffer[offsetBuffer];
+      offsetResult++;
+      offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+  }
+
+  function encodeWAV(samples, sampleRate) {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+
+    function writeString(offset, string) {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    }
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true); // Linear PCM chunk size
+    view.setUint16(20, 1, true);  // PCM format
+    view.setUint16(22, 1, true);  // 1 channel (mono)
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true); // byte rate (sampleRate * 1 * 2)
+    view.setUint16(32, 2, true);  // block align (1 * 2)
+    view.setUint16(34, 16, true); // 16 bits per sample
+    writeString(36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+
+    // 16-bit signed PCM
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++) {
+      let s = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      offset += 2;
+    }
+
+    return new Blob([view], { type: 'audio/wav' });
+  }
+
+  function startWebAudioCapture(lang) {
+    latestText = "";
+    lastSubmittedText = "";
+    webAudioChunks = [];
+    webAudioTotalSamples = 0;
+    webAudioHasSpoken = false;
+    webAudioLastSpokenTime = 0;
+    webAudioStartTime = Date.now();
+
+    const nav = navigator.mediaDevices || (navigator.webkitGetUserMedia ? {
+      getUserMedia: function(c) {
+        return new Promise(function(y, n) {
+          navigator.webkitGetUserMedia(c, y, n);
+        });
+      }
+    } : null);
+
+    if (!nav || !nav.getUserMedia) {
+      setListeningUI(false);
+      statusText.innerHTML = '⚠️ Audio capture is not supported in this browser. Please type below.';
+      return;
+    }
+
+    setListeningUI(true);
+    statusText.innerHTML = '🔴 <strong>Listening...</strong> Speak your question clearly into your microphone.';
+
+    nav.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+      .then(function(stream) {
+        webAudioStream = stream;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        webAudioContext = new AudioCtx();
+
+        const source = webAudioContext.createMediaStreamSource(stream);
+        webAudioProcessor = webAudioContext.createScriptProcessor(4096, 1, 1);
+
+        webAudioProcessor.onaudioprocess = function(e) {
+          if (!isListening) return;
+          const inputData = e.inputBuffer.getChannelData(0);
+          const chunk = new Float32Array(inputData.length);
+          chunk.set(inputData);
+          webAudioChunks.push(chunk);
+          webAudioTotalSamples += chunk.length;
+
+          // Energy-based Voice Activity Detection (VAD)
+          let sum = 0;
+          for (let i = 0; i < inputData.length; i++) {
+            sum += inputData[i] * inputData[i];
+          }
+          const rms = Math.sqrt(sum / inputData.length);
+
+          if (rms > 0.015) {
+            webAudioHasSpoken = true;
+            webAudioLastSpokenTime = Date.now();
+            statusText.innerHTML = '🔴 <strong>Listening...</strong> <em>(voice detected)</em>';
+          } else if (webAudioHasSpoken) {
+            // User was speaking, now paused
+            const silenceMs = Date.now() - webAudioLastSpokenTime;
+            if (silenceMs > 1300) {
+              // 1.3 seconds of silence after speech -> auto-stop and submit!
+              stopWebAudioCaptureAndSubmit(lang);
+            }
+          }
+
+          // Safety max recording duration: 14 seconds
+          if (Date.now() - webAudioStartTime > 14000) {
+            stopWebAudioCaptureAndSubmit(lang);
+          }
+        };
+
+        source.connect(webAudioProcessor);
+        webAudioProcessor.connect(webAudioContext.destination);
+      })
+      .catch(function(err) {
+        setListeningUI(false);
+        console.error("getUserMedia error:", err);
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          statusText.innerHTML = '⚠️ <strong>Microphone permission denied.</strong> Please click the camera/microphone icon in your address bar to allow access.';
+        } else {
+          statusText.innerHTML = '⚠️ Microphone error: ' + escapeHtml(err.message || err.name);
+        }
+      });
+  }
+
+  function stopWebAudioCaptureAndSubmit(lang) {
+    if (!isListening && !webAudioStream) return;
+    isListening = false;
+
+    micBtn.classList.remove('listening');
+    micText.innerText = 'Transcribing...';
+    statusText.innerHTML = '⚡ <strong>Processing speech...</strong> Transcribing audio with Pulse AI...';
+    sendStreamlitMessage('streamlit:setFrameHeight', { height: getAutoHeight() });
+
+    // Clean up tracks
+    if (webAudioStream) {
+      try {
+        webAudioStream.getTracks().forEach(function(t) { t.stop(); });
+      } catch(e) {}
+      webAudioStream = null;
+    }
+    if (webAudioProcessor) {
+      try { webAudioProcessor.disconnect(); } catch(e) {}
+      webAudioProcessor = null;
+    }
+
+    const inputRate = (webAudioContext && webAudioContext.sampleRate) || 44100;
+    if (webAudioContext) {
+      try { webAudioContext.close(); } catch(e) {}
+      webAudioContext = null;
+    }
+
+    if (webAudioChunks.length === 0 || webAudioTotalSamples < 3000) {
+      micText.innerText = 'Speak Question';
+      statusText.innerHTML = 'ℹ️ Audio was too short. Click <strong>🎤 Speak Question</strong> to try again.';
+      return;
+    }
+
+    // Merge Float32Array chunks
+    const fullBuffer = new Float32Array(webAudioTotalSamples);
+    let offset = 0;
+    for (let i = 0; i < webAudioChunks.length; i++) {
+      fullBuffer.set(webAudioChunks[i], offset);
+      offset += webAudioChunks[i].length;
+    }
+
+    // Downsample to 16,000 Hz for optimal Speech-to-Text
+    const targetRate = 16000;
+    const downsampled = downsampleBuffer(fullBuffer, inputRate, targetRate);
+
+    // Encode standard 16-bit PCM WAV Blob
+    const wavBlob = encodeWAV(downsampled, targetRate);
+
+    // Convert to base64 DataURL and send to Streamlit
+    const reader = new FileReader();
+    reader.onloadend = function() {
+      const base64Data = reader.result;
+      statusText.innerHTML = '⚡ <strong>Audio captured.</strong> Submitting to Pulse AI...';
+      submitAudioToStreamlit(base64Data, lang);
+      setTimeout(function() {
+        micText.innerText = 'Speak Question';
+      }, 1500);
+    };
+    reader.onerror = function() {
+      micText.innerText = 'Speak Question';
+      statusText.innerHTML = '⚠️ Failed to encode audio. Click Speak Question to retry.';
+    };
+    reader.readAsDataURL(wavBlob);
+  }
+
+  // ==============================================================
+  // Speak Question Click Dispatcher (Cross-Browser Unified Handler)
+  // ==============================================================
+  micBtn.onclick = function() {
+    const selectedLang = langSelect ? langSelect.value : 'en-US';
+
+    // If currently listening, stop immediately
+    if (isListening) {
+      if (webAudioStream) {
+        stopWebAudioCaptureAndSubmit(selectedLang);
+      } else {
+        if (window.parent && window.parent.__pulseVoiceController) {
+          try { window.parent.__pulseVoiceController.stopNative(); } catch(e) {}
+        }
+        setListeningUI(false);
+        statusText.innerHTML = 'ℹ️ Listening stopped. Click <strong>🎤 Speak Question</strong> to talk.';
+      }
+      return;
+    }
+
+    initParentVoiceController();
+
+    // Fast Path: Native SpeechRecognition (Chrome & Edge)
+    if (isNativeSpeechSupported()) {
+      latestText = "";
+      lastSubmittedText = "";
+      setListeningUI(true);
+
+      const callbacks = {
+        onStart: function() {
+          setListeningUI(true);
+        },
+        onResult: function(final, interim) {
+          handleNativeVoiceResult(final, interim);
+        },
+        onError: function(err) {
+          handleNativeVoiceError(err);
+        },
+        onEnd: function() {
+          handleNativeVoiceEnd();
+        }
+      };
+
+      if (window.parent && window.parent.__pulseVoiceController) {
+        window.parent.__pulseVoiceController.startNative(selectedLang, callbacks);
+      } else {
+        // Fallback to Web Audio if parent script is unavailable
+        startWebAudioCapture(selectedLang);
+      }
+    } else {
+      // Universal Fallback: Web Audio Capture (Firefox & others)
+      startWebAudioCapture(selectedLang);
+    }
+  };
+
+  langSelect.onchange = function() {
+    if (window.parent && window.parent.__pulseVoiceController && window.parent.__pulseVoiceController.recognition) {
+      window.parent.__pulseVoiceController.recognition.lang = langSelect.value;
+    }
+  };
+</script>
+</body>
+</html>
